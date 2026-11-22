@@ -1,1 +1,340 @@
 
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#101827">
+<title>VOXIA AI - Text to Speech</title>
+
+<style>
+*{box-sizing:border-box}
+body{
+ margin:0;background:#0b1220;color:#f4f7ff;
+ font-family:Arial,sans-serif;
+}
+header{
+ padding:23px 6%;background:#111c2e;
+ border-bottom:1px solid #26354a;
+ display:flex;align-items:center;justify-content:space-between;
+}
+.logo{font-size:25px;font-weight:800;letter-spacing:1px}
+.logo span{color:#459aff}
+.status{font-size:12px;color:#67dca2}
+main{max-width:850px;margin:35px auto;padding:0 18px}
+h1{font-size:27px;margin-bottom:8px}
+.subtitle{color:#91a2ba;font-size:14px;margin-bottom:27px}
+.panel{
+ background:#142136;border:1px solid #293a53;
+ border-radius:17px;padding:20px;margin-bottom:20px;
+}
+label{display:block;font-size:13px;font-weight:bold;margin-bottom:12px}
+textarea{
+ width:100%;height:230px;resize:vertical;
+ background:#0c1728;color:white;border:1px solid #334660;
+ border-radius:11px;padding:15px;font-size:15px;
+ line-height:1.6;outline:none;
+}
+textarea:focus{border-color:#459aff}
+.meta{display:flex;justify-content:space-between;
+ color:#91a2ba;font-size:12px;margin-top:10px}
+select{
+ width:100%;padding:14px;background:#0c1728;color:white;
+ border:1px solid #334660;border-radius:10px;font-size:14px;
+}
+.controls{display:flex;gap:15px;align-items:center;margin-top:18px}
+.controls div{flex:1}
+input[type=range]{width:100%;accent-color:#459aff}
+.value{font-size:12px;color:#9cb0ca;margin-top:7px}
+button{
+ border:0;border-radius:11px;padding:15px;
+ font-weight:bold;cursor:pointer;font-size:14px;
+}
+.primary{background:#3988ff;color:white;width:100%;margin-top:20px}
+.primary:disabled{opacity:.5;cursor:not-allowed}
+.secondary{background:#263952;color:white;flex:1}
+.actions{display:flex;gap:10px;margin-top:15px}
+button:active{transform:scale(.98)}
+#message{color:#91a2ba;font-size:13px;margin-top:13px}
+.history-item{
+ background:#0c1728;border-radius:10px;padding:12px;
+ margin-top:10px;display:flex;justify-content:space-between;
+ gap:10px;align-items:center;font-size:13px;
+}
+.history-item button{padding:8px;background:#263952;color:white}
+footer{text-align:center;padding:30px;color:#687c98;font-size:12px}
+@media(max-width:500px){
+ header{padding:18px}
+ main{margin-top:25px}
+ .controls{flex-direction:column;align-items:stretch}
+ .panel{padding:16px}
+}
+</style>
+</head>
+
+<body>
+<header>
+ <div class="logo">VOXIA <span>AI</span></div>
+ <div class="status">● ESTUDIO PERSONAL</div>
+</header>
+
+<main>
+ <h1>Convierte texto en voz</h1>
+ <div class="subtitle">
+ Tu estudio personal de narración con inteligencia artificial.
+ </div>
+
+ <section class="panel">
+  <label for="text">TU TEXTO</label>
+  <textarea id="text" placeholder="Escribe o pega aquí tu historia, guion o cualquier texto que quieras escuchar..."></textarea>
+  <div class="meta">
+   <span id="count">0 caracteres</span>
+   <span>Texto a voz</span>
+  </div>
+ </section>
+
+ <section class="panel">
+  <label for="voice">SELECCIONA UNA VOZ</label>
+  <select id="voice">
+   <option>Cargando voces...</option>
+  </select>
+
+  <div class="controls">
+   <div>
+    <label for="speed">VELOCIDAD</label>
+    <input id="speed" type="range" min="0.5" max="2" step="0.1" value="1">
+    <div class="value"><span id="speedValue">1.0</span>x</div>
+   </div>
+   <div>
+    <label for="pitch">TONO</label>
+    <input id="pitch" type="range" min="0.5" max="2" step="0.1" value="1">
+    <div class="value"><span id="pitchValue">1.0</span></div>
+   </div>
+  </div>
+
+  <button class="primary" id="generate">▶ GENERAR VOZ</button>
+  <div id="message">Listo para generar tu narración.</div>
+  <div class="actions">
+   <button class="secondary" id="pause">Ⅱ Pausar</button>
+   <button class="secondary" id="resume">▶ Continuar</button>
+   <button class="secondary" id="stop">■ Detener</button>
+  </div>
+ </section>
+
+ <section class="panel">
+  <label>HISTORIAL RECIENTE</label>
+  <div id="history">
+   <div class="value">Todavía no tienes textos guardados.</div>
+  </div>
+ </section>
+</main>
+
+<footer>VOXIA AI · Tu voz, tus historias.</footer>
+
+<script>
+const text = document.getElementById("text");
+const voiceSelect = document.getElementById("voice");
+const message = document.getElementById("message");
+const generate = document.getElementById("generate");
+
+let voices = [];
+let chunks = [];
+let current = 0;
+let playing = false;
+let paused = false;
+let generationId = 0;
+
+text.addEventListener("input",()=>{
+ document.getElementById("count").textContent =
+ text.value.length + " caracteres";
+});
+
+document.getElementById("speed").addEventListener("input",e=>{
+ document.getElementById("speedValue").textContent =
+ Number(e.target.value).toFixed(1);
+});
+
+document.getElementById("pitch").addEventListener("input",e=>{
+ document.getElementById("pitchValue").textContent =
+ Number(e.target.value).toFixed(1);
+});
+
+function loadVoices(){
+ voices = speechSynthesis.getVoices();
+ voiceSelect.innerHTML = "";
+
+ const spanish = voices.filter(v=>v.lang.toLowerCase().startsWith("es"));
+ const available = spanish.length ? spanish : voices;
+
+ available.forEach((v)=>{
+  const option=document.createElement("option");
+  option.value=voices.indexOf(v);
+  option.textContent=v.name+" ("+v.lang+")";
+  voiceSelect.appendChild(option);
+ });
+
+ if(!available.length){
+  voiceSelect.innerHTML="<option>No hay voces disponibles</option>";
+ }
+}
+
+if("speechSynthesis" in window){
+ loadVoices();
+ speechSynthesis.onvoiceschanged=loadVoices;
+}else{
+ message.textContent="Este navegador no admite síntesis de voz.";
+ generate.disabled=true;
+}
+
+function splitText(value,max=220){
+ const sentences=value.match(/[^.!?]+[.!?]+|[^.!?]+$/g)||[value];
+ const result=[];
+ let part="";
+
+ sentences.forEach(sentence=>{
+  if((part+sentence).length>max && part){
+   result.push(part.trim());
+   part="";
+  }
+  if(sentence.length>max){
+   const words=sentence.split(/\s+/);
+   words.forEach(word=>{
+    if((part+word).length>max && part){
+     result.push(part.trim());
+     part="";
+    }
+    part+=word+" ";
+   });
+  }else{
+   part+=sentence;
+  }
+ });
+ if(part.trim())result.push(part.trim());
+ return result;
+}
+
+function speakNext(id){
+ if(id!==generationId || paused)return;
+
+ if(current>=chunks.length){
+  playing=false;
+  message.textContent="✓ Narración finalizada.";
+  return;
+ }
+
+ const utterance=new SpeechSynthesisUtterance(chunks[current]);
+ const selected=voices[Number(voiceSelect.value)];
+
+ if(selected)utterance.voice=selected;
+ utterance.rate=Number(document.getElementById("speed").value);
+ utterance.pitch=Number(document.getElementById("pitch").value);
+ utterance.lang=selected?.lang||"es-ES";
+
+ utterance.onstart=()=>{
+  if(id===generationId){
+   message.textContent="Reproduciendo fragmento "+(current+1)+" de "+chunks.length;
+  }
+ };
+
+ utterance.onend=()=>{
+  if(id!==generationId)return;
+  current++;
+  speakNext(id);
+ };
+
+ utterance.onerror=(event)=>{
+  if(id===generationId){
+   playing=false;
+   message.textContent="No se pudo reproducir: "+event.error;
+  }
+ };
+
+ speechSynthesis.speak(utterance);
+}
+
+generate.addEventListener("click",()=>{
+ const value=text.value.trim();
+ if(!value)return;
+
+ if(!("speechSynthesis" in window))return;
+
+ generationId++;
+ const id=generationId;
+ speechSynthesis.cancel();
+
+ chunks=splitText(value);
+ current=0;
+ playing=true;
+ paused=false;
+
+ saveHistory(value);
+ message.textContent="Preparando narración...";
+ speakNext(id);
+});
+
+document.getElementById("pause").onclick=()=>{
+ if(speechSynthesis.speaking){
+  speechSynthesis.pause();
+  paused=true;
+  message.textContent="Narración pausada.";
+ }
+};
+
+document.getElementById("resume").onclick=()=>{
+ if(paused){
+  paused=false;
+  speechSynthesis.resume();
+  message.textContent="Continuando narración...";
+ }
+};
+
+document.getElementById("stop").onclick=()=>{
+ generationId++;
+ speechSynthesis.cancel();
+ playing=false;
+ paused=false;
+ current=0;
+ message.textContent="Narración detenida.";
+};
+
+function getHistory(){
+ try{return JSON.parse(localStorage.getItem("voxiaHistory")||"[]")}
+ catch{return []}
+}
+
+function saveHistory(value){
+ let items=getHistory();
+ items.unshift(value);
+ items=[...new Set(items)].slice(0,8);
+ localStorage.setItem("voxiaHistory",JSON.stringify(items));
+ renderHistory();
+}
+
+function renderHistory(){
+ const container=document.getElementById("history");
+ const items=getHistory();
+ container.innerHTML="";
+
+ if(!items.length){
+  container.textContent="Todavía no tienes textos guardados.";
+  return;
+ }
+
+ items.forEach(item=>{
+  const row=document.createElement("div");
+  row.className="history-item";
+  const preview=document.createElement("span");
+  preview.textContent=item.slice(0,65)+(item.length>65?"...":"");
+  const btn=document.createElement("button");
+  btn.textContent="Abrir";
+  btn.onclick=()=>{text.value=item;text.dispatchEvent(new Event("input"));window.scrollTo(0,0)};
+  row.append(preview,btn);
+  container.appendChild(row);
+ });
+}
+
+renderHistory();
+</script>
+</body>
+</html>
+
